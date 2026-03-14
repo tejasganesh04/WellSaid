@@ -11,6 +11,7 @@ import TranscriptPanel from '../components/TranscriptPanel'
 import CoachingSidebar from '../components/CoachingSidebar'
 import WebcamPiP from '../components/WebcamPiP'
 import Controls from '../components/Controls'
+import DevMetricsPanel from '../components/DevMetricsPanel'
 
 export default function InterviewRoom() {
   const navigate = useNavigate()
@@ -60,6 +61,7 @@ export default function InterviewRoom() {
         </div>
         <CoachingSidebar />
       </div>
+      <DevMetricsPanel />
     </div>
   )
 }

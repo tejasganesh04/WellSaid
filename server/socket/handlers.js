@@ -61,7 +61,7 @@ export function registerSocketHandlers(io, socket) {
       const sessionId = socket.sessionId
       if (!sessionId) return
 
-      const t0 = Date.now()
+      const spans = { answer_received_at: Date.now() }
 
       // Load session
       const session = await Session.findOne({ session_id: sessionId })
@@ -74,8 +74,10 @@ export function registerSocketHandlers(io, socket) {
       )
 
       const updatedSession = await Session.findOne({ session_id: sessionId })
+      spans.db_write_ms = Date.now() - spans.answer_received_at
 
       // Fire coaching and next question in parallel
+      const parallelStart = Date.now()
       const [coachResult, questionResult] = await Promise.allSettled([
         session.config.coachEnabled
           ? generateCoachingHint({
@@ -92,7 +94,9 @@ export function registerSocketHandlers(io, socket) {
         }),
       ])
 
-      const latency = { total_ms: Date.now() - t0 }
+      spans.interviewer_ms = Date.now() - parallelStart
+      spans.total_ms = Date.now() - spans.answer_received_at
+      const latency = spans
 
       // Send coaching hint if available
       if (coachResult.status === 'fulfilled' && coachResult.value?.hint) {
@@ -130,6 +134,27 @@ export function registerSocketHandlers(io, socket) {
       }
     } catch (err) {
       console.error('[answer:complete] error:', err.message)
+    }
+  })
+
+  // Live transcript chunk — fire semantic coaching while user is speaking
+  socket.on('transcript:chunk', async ({ transcript, currentQuestion }) => {
+    try {
+      const session = await Session.findOne({ session_id: socket.sessionId }, 'config').lean()
+      if (!session?.config?.coachEnabled) return
+
+      const result = await generateCoachingHint({
+        transcript,
+        currentQuestion,
+        sessionConfig: session.config,
+      })
+
+      if (result?.hint) {
+        socket.emit('coach:hint', { hint: result.hint, type: 'semantic' })
+      }
+    } catch (err) {
+      // Coaching failure is silent — never disrupts the interview
+      console.warn('[transcript:chunk] coaching skipped:', err.message)
     }
   })
 

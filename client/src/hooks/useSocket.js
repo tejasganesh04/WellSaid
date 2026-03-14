@@ -18,7 +18,10 @@ export function useSocket() {
     // Interviewer sent a new question
     socket.on('interviewer:question', ({ question, latency }) => {
       setCurrentQuestion(question)
-      if (latency) setLatencyMetrics(latency)
+      if (latency) {
+        latency.question_rendered_at = Date.now()
+        setLatencyMetrics(latency)
+      }
     })
 
     // Interviewer is thinking (LLM generating)

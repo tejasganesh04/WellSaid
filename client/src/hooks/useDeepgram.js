@@ -4,15 +4,17 @@ import useSessionStore from '../store/sessionStore'
 import socket from '../services/socket'
 
 const DEEPGRAM_API_KEY = import.meta.env.VITE_DEEPGRAM_API_KEY
+const COACHING_WORD_THRESHOLD = 20   // emit transcript:chunk every 20 new final words
 
 export function useDeepgram() {
   const connectionRef = useRef(null)
   const recorderRef = useRef(null)
   const streamRef = useRef(null)
-  const finalAnswerRef = useRef('')   // accumulates final words for this answer turn
+  const finalAnswerRef = useRef('')      // accumulates final words for this answer turn
+  const wordsSinceLastCoachRef = useRef(0)  // tracks words since last coaching trigger
   const isActiveRef = useRef(false)
 
-  const { appendTranscript, clearTranscript, micActive, sessionStatus } = useSessionStore()
+  const { appendTranscript, clearTranscript, micActive, sessionStatus, coachEnabled } = useSessionStore()
 
   const stop = useCallback(() => {
     isActiveRef.current = false
@@ -28,55 +30,55 @@ export function useDeepgram() {
     if (isActiveRef.current) return
     isActiveRef.current = true
     finalAnswerRef.current = ''
+    wordsSinceLastCoachRef.current = 0
 
     try {
-      // 1. Get mic stream
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
 
-      // 2. Create Deepgram live connection
       const deepgram = createClient(DEEPGRAM_API_KEY)
       const connection = deepgram.listen.live({
         model: 'nova-2',
         language: 'en-US',
         smart_format: true,
         interim_results: true,
-        utterance_end_ms: 1500,   // fires UtteranceEnd after 1.5s of silence
+        utterance_end_ms: 1500,
         vad_events: true,
       })
       connectionRef.current = connection
 
-      // 3. On transcript event
       connection.on(LiveTranscriptionEvents.Transcript, (data) => {
         const words = data.channel?.alternatives?.[0]?.transcript
         if (!words || words.trim() === '') return
 
         if (data.is_final) {
-          // Final word — accumulate into the answer buffer
           finalAnswerRef.current += ' ' + words
           appendTranscript(words)
-        } else {
-          // Interim/partial — just show it (don't accumulate)
-          // We only update the store display; finalAnswerRef only gets finals
-          appendTranscript('')   // trigger re-render with interim shown separately if needed
+
+          // Count new words and fire coaching chunk if threshold crossed
+          const newWordCount = words.trim().split(/\s+/).length
+          wordsSinceLastCoachRef.current += newWordCount
+
+          if (coachEnabled && wordsSinceLastCoachRef.current >= COACHING_WORD_THRESHOLD) {
+            wordsSinceLastCoachRef.current = 0
+            const { currentQuestion } = useSessionStore.getState()
+            socket.emit('transcript:chunk', {
+              transcript: finalAnswerRef.current.trim(),
+              currentQuestion,
+            })
+          }
         }
       })
 
-      // 4. UtteranceEnd = user stopped speaking — submit the answer
       connection.on(LiveTranscriptionEvents.UtteranceEnd, () => {
         const answer = finalAnswerRef.current.trim()
         if (!answer) return
 
-        console.log('[deepgram] utterance ended, answer:', answer)
+        console.log('[deepgram] utterance ended')
+        socket.emit('answer:complete', { answer, transcript: answer })
 
-        // Send to Node server via socket
-        socket.emit('answer:complete', {
-          answer,
-          transcript: answer,
-        })
-
-        // Reset for next answer
         finalAnswerRef.current = ''
+        wordsSinceLastCoachRef.current = 0
         clearTranscript()
       })
 
@@ -92,29 +94,24 @@ export function useDeepgram() {
         console.log('[deepgram] connection closed')
       })
 
-      // 5. Feed mic audio into Deepgram via MediaRecorder
       connection.on(LiveTranscriptionEvents.Open, () => {
         console.log('[deepgram] connection open')
-
         const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
         recorderRef.current = recorder
-
         recorder.ondataavailable = (e) => {
           if (e.data.size > 0 && connection.getReadyState() === 1) {
             connection.send(e.data)
           }
         }
-
-        recorder.start(250)  // send chunks every 250ms
+        recorder.start(250)
       })
 
     } catch (err) {
       console.error('[deepgram] failed to start:', err.message)
       isActiveRef.current = false
     }
-  }, [appendTranscript, clearTranscript])
+  }, [appendTranscript, clearTranscript, coachEnabled])
 
-  // Start/stop based on mic toggle and session status
   useEffect(() => {
     if (sessionStatus === 'active' && micActive) {
       start()
