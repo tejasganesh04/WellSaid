@@ -110,7 +110,7 @@ export function useDeepgram() {
         language: 'en-US',
         smart_format: true,
         interim_results: true,
-        utterance_end_ms: 3000,
+        utterance_end_ms: 7000,
         vad_events: true,
       })
       connectionRef.current = connection
