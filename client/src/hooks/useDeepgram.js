@@ -5,6 +5,7 @@ import socket from '../services/socket'
 
 const DEEPGRAM_API_KEY = import.meta.env.VITE_DEEPGRAM_API_KEY
 const COACHING_WORD_THRESHOLD = 20
+const MIN_ANSWER_WORDS = 10   // don't submit if user has barely said anything
 
 export function useDeepgram() {
   const connectionRef = useRef(null)
@@ -58,16 +59,22 @@ export function useDeepgram() {
       }
     }
 
-    // Treat a pause as utterance end (Web Speech API pauses automatically)
+    // Debounce speechend — Web Speech fires this on any brief pause
+    let speechEndTimer = null
     recognition.onspeechend = () => {
-      const answer = finalAnswerRef.current.trim()
-      if (answer) {
-        socket.emit('answer:complete', { answer, transcript: answer })
-        finalAnswerRef.current = ''
-        wordsSinceLastCoachRef.current = 0
-        clearTranscript()
-      }
+      clearTimeout(speechEndTimer)
+      speechEndTimer = setTimeout(() => {
+        const answer = finalAnswerRef.current.trim()
+        const wordCount = answer.split(/\s+/).length
+        if (answer && wordCount >= MIN_ANSWER_WORDS) {
+          socket.emit('answer:complete', { answer, transcript: answer })
+          finalAnswerRef.current = ''
+          wordsSinceLastCoachRef.current = 0
+          clearTranscript()
+        }
+      }, 2000)   // wait 2s after speech ends before submitting
     }
+    recognition.onspeechstart = () => clearTimeout(speechEndTimer)
 
     recognition.onerror = (e) => console.error('[webspeech] error:', e.error)
     recognition.start()
@@ -103,7 +110,7 @@ export function useDeepgram() {
         language: 'en-US',
         smart_format: true,
         interim_results: true,
-        utterance_end_ms: 1500,
+        utterance_end_ms: 3000,
         vad_events: true,
       })
       connectionRef.current = connection
@@ -129,6 +136,8 @@ export function useDeepgram() {
       connection.on(LiveTranscriptionEvents.UtteranceEnd, () => {
         const answer = finalAnswerRef.current.trim()
         if (!answer) return
+        const wordCount = answer.split(/\s+/).length
+        if (wordCount < MIN_ANSWER_WORDS) return   // still mid-sentence pause, not done
         socket.emit('answer:complete', { answer, transcript: answer })
         finalAnswerRef.current = ''
         wordsSinceLastCoachRef.current = 0
