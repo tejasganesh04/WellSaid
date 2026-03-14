@@ -4,22 +4,36 @@ import { useMediaPipe } from '../hooks/useMediaPipe'
 
 export default function WebcamPiP() {
   const videoRef = useRef(null)
-  const { camActive, faceVisible } = useSessionStore()
+  const { camActive, faceVisible, setCamActive, addDegradedService, removeDegradedService } = useSessionStore()
 
-  // Run MediaPipe face detection on the video feed
   useMediaPipe(videoRef)
 
   useEffect(() => {
+    if (!camActive) return
     let stream = null
+
     async function startCam() {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: true })
         if (videoRef.current) videoRef.current.srcObject = stream
-      } catch {
-        // cam unavailable — camActive state handles UI
+        removeDegradedService('camera')
+
+        // Detect if the track ends unexpectedly (e.g. camera unplugged)
+        stream.getVideoTracks().forEach((track) => {
+          track.onended = () => {
+            console.warn('[webcam] track ended — switching to audio-only')
+            setCamActive(false)
+            addDegradedService('camera')
+          }
+        })
+      } catch (err) {
+        console.warn('[webcam] failed to start:', err.message)
+        setCamActive(false)
+        addDegradedService('camera')
       }
     }
-    if (camActive) startCam()
+
+    startCam()
     return () => stream?.getTracks().forEach((t) => t.stop())
   }, [camActive])
 

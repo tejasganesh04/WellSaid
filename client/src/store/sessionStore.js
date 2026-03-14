@@ -1,12 +1,12 @@
 import { create } from 'zustand'
 
 const useSessionStore = create((set) => ({
-  // Session config (set during setup)
+  // Session config
   sessionId: null,
-  sessionConfig: null,    // { mode, role, seniority, difficulty, focusAreas, coachEnabled }
+  sessionConfig: null,
 
   // Live interview state
-  sessionStatus: 'idle',  // idle | active | ended | terminated_early
+  sessionStatus: 'idle',        // idle | active | ended | terminated_early
   currentQuestion: null,
   liveTranscript: '',
   coachingCards: [],
@@ -18,7 +18,12 @@ const useSessionStore = create((set) => ({
   camActive: true,
   faceVisible: true,
 
-  // Latency metrics (for dev panel)
+  // Resilience / degraded state
+  sttMode: 'deepgram',          // deepgram | webspeech | none
+  connectionStatus: 'connected', // connected | reconnecting | disconnected
+  degradedServices: [],          // ['stt', 'coaching', 'interviewer', 'camera']
+
+  // Latency metrics
   latencyMetrics: null,
 
   // Post-session
@@ -42,6 +47,14 @@ const useSessionStore = create((set) => ({
   setMicActive: (val) => set({ micActive: val }),
   setCamActive: (val) => set({ camActive: val }),
   setFaceVisible: (val) => set({ faceVisible: val }),
+  setSttMode: (mode) => set({ sttMode: mode }),
+  setConnectionStatus: (status) => set({ connectionStatus: status }),
+  addDegradedService: (svc) => set((s) => ({
+    degradedServices: s.degradedServices.includes(svc) ? s.degradedServices : [...s.degradedServices, svc]
+  })),
+  removeDegradedService: (svc) => set((s) => ({
+    degradedServices: s.degradedServices.filter((s2) => s2 !== svc)
+  })),
   setLatencyMetrics: (metrics) => set({ latencyMetrics: metrics }),
   setReport: (report) => set({ report }),
 
@@ -56,6 +69,9 @@ const useSessionStore = create((set) => ({
     micActive: true,
     camActive: true,
     faceVisible: true,
+    sttMode: 'deepgram',
+    connectionStatus: 'connected',
+    degradedServices: [],
     latencyMetrics: null,
     report: null,
   }),

@@ -129,11 +129,33 @@ export function registerSocketHandlers(io, socket) {
         console.error('[answer:complete] interviewer failed:', questionResult.reason)
         socket.emit('interviewer:question', {
           question: "Could you elaborate on that a bit more?",
-          latency: { total_ms: Date.now() - t0 },
+          latency: { total_ms: spans.total_ms },
         })
       }
     } catch (err) {
       console.error('[answer:complete] error:', err.message)
+    }
+  })
+
+  // Client rejoins an existing session after a disconnect
+  socket.on('session:rejoin', async ({ sessionId }) => {
+    try {
+      const session = await Session.findOne({ session_id: sessionId })
+      if (!session || session.status !== 'active') return
+
+      socket.sessionId = sessionId
+      console.log(`[session] rejoined: ${sessionId}`)
+
+      // Re-send the last interviewer question so the client can resume
+      const lastQuestion = session.conversation_history
+        .filter((m) => m.role === 'interviewer')
+        .at(-1)
+
+      if (lastQuestion) {
+        socket.emit('interviewer:question', { question: lastQuestion.content, latency: null })
+      }
+    } catch (err) {
+      console.error('[session:rejoin] error:', err.message)
     }
   })
 

@@ -1,9 +1,28 @@
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useSessionStore from '../store/sessionStore'
+import socket from '../services/socket'
 
 export default function Report() {
   const navigate = useNavigate()
-  const { report, sessionConfig, reset } = useSessionStore()
+  const { report, sessionConfig, setReport, reset } = useSessionStore()
+
+  useEffect(() => {
+    // Report page owns the socket from here — listen for report:ready in case
+    // it arrives after we navigated from InterviewRoom
+    socket.on('report:ready', ({ report: r }) => {
+      setReport(r)
+      socket.disconnect()   // session is fully over, safe to disconnect now
+    })
+
+    // If report never arrives (evaluation service down), disconnect after 60s
+    const timeout = setTimeout(() => socket.disconnect(), 60000)
+
+    return () => {
+      socket.off('report:ready')
+      clearTimeout(timeout)
+    }
+  }, [])
 
   function handleNewInterview() {
     reset()
@@ -15,7 +34,7 @@ export default function Report() {
       <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">
         <div className="text-center">
           <div className="text-gray-400 mb-2">Generating your report...</div>
-          <div className="text-xs text-gray-600">This takes about 15-20 seconds</div>
+          <div className="text-xs text-gray-600">This takes about 15–20 seconds</div>
         </div>
       </div>
     )
@@ -39,29 +58,22 @@ export default function Report() {
         </p>
       )}
 
-      {/* Scores */}
       <div className="grid grid-cols-2 gap-4 mb-8">
         {Object.entries(report.scores || {}).map(([key, val]) => (
           <ScoreCard key={key} label={key} score={val} />
         ))}
       </div>
 
-      {/* Strengths */}
       {report.strengths?.length > 0 && (
         <Section title="Strengths" items={report.strengths} color="green" />
       )}
-
-      {/* Weaknesses */}
       {report.weaknesses?.length > 0 && (
         <Section title="Areas to Improve" items={report.weaknesses} color="red" />
       )}
-
-      {/* Improvements */}
       {report.improvements?.length > 0 && (
         <Section title="Actionable Suggestions" items={report.improvements} color="blue" />
       )}
 
-      {/* Answer breakdown */}
       {report.answer_breakdown?.length > 0 && (
         <div className="mt-8">
           <h2 className="text-lg font-semibold mb-4">Answer Breakdown</h2>

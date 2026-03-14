@@ -12,10 +12,12 @@ export function useSocket() {
     setSessionStatus,
     setLatencyMetrics,
     setReport,
+    setConnectionStatus,
+    sessionId,
   } = useSessionStore()
 
   useEffect(() => {
-    // Interviewer sent a new question
+    // ─── Interviewer events ──────────────────────────────────────
     socket.on('interviewer:question', ({ question, latency }) => {
       setCurrentQuestion(question)
       if (latency) {
@@ -24,42 +26,67 @@ export function useSocket() {
       }
     })
 
-    // Interviewer is thinking (LLM generating)
-    socket.on('interviewer:thinking', () => {
-      setInterviewerThinking(true)
-    })
+    socket.on('interviewer:thinking', () => setInterviewerThinking(true))
 
-    // Coaching hint arrived
+    // ─── Coaching events ──────────────────────────────────────────
     socket.on('coach:hint', ({ hint, type }) => {
-      addCoachCard({ text: hint, type }) // type: 'delivery' | 'semantic'
+      addCoachCard({ text: hint, type })
     })
 
-    // Session ended (normal or early termination)
+    // ─── Session lifecycle ────────────────────────────────────────
+    socket.on('session:created', ({ sessionId: id }) => {
+      useSessionStore.getState().setSessionId(id)
+    })
+
     socket.on('session:ended', ({ status, message }) => {
       setSessionStatus(status)
-      if (message) {
-        // Interviewer issued a closing statement (early termination)
-        addCoachCard({ text: message, type: 'system' })
-      }
+      if (message) addCoachCard({ text: message, type: 'system' })
       navigate('/report')
     })
 
-    // Report is ready
     socket.on('report:ready', ({ report }) => {
       setReport(report)
     })
 
-    socket.on('connect', () => console.log('Socket connected'))
-    socket.on('disconnect', () => console.log('Socket disconnected'))
+    // ─── Connection resilience ────────────────────────────────────
+    socket.on('connect', () => {
+      setConnectionStatus('connected')
+      console.log('[socket] connected')
+
+      // If we had an active session before disconnect, try to rejoin
+      const { sessionId: sid, sessionStatus } = useSessionStore.getState()
+      if (sid && sessionStatus === 'active') {
+        console.log('[socket] rejoining session:', sid)
+        socket.emit('session:rejoin', { sessionId: sid })
+      }
+    })
+
+    socket.on('disconnect', (reason) => {
+      console.warn('[socket] disconnected:', reason)
+      setConnectionStatus('disconnected')
+    })
+
+    socket.on('reconnecting', (attempt) => {
+      console.log('[socket] reconnecting, attempt:', attempt)
+      setConnectionStatus('reconnecting')
+    })
+
+    socket.on('connect_error', (err) => {
+      console.error('[socket] connect error:', err.message)
+      setConnectionStatus('disconnected')
+    })
 
     return () => {
       socket.off('interviewer:question')
       socket.off('interviewer:thinking')
       socket.off('coach:hint')
+      socket.off('session:created')
       socket.off('session:ended')
       socket.off('report:ready')
       socket.off('connect')
       socket.off('disconnect')
+      socket.off('reconnecting')
+      socket.off('connect_error')
     }
   }, [])
 }

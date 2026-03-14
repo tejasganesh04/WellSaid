@@ -12,14 +12,15 @@ import CoachingSidebar from '../components/CoachingSidebar'
 import WebcamPiP from '../components/WebcamPiP'
 import Controls from '../components/Controls'
 import DevMetricsPanel from '../components/DevMetricsPanel'
+import StatusBar from '../components/StatusBar'
 
 export default function InterviewRoom() {
   const navigate = useNavigate()
-  const { sessionConfig, setSessionStatus, sessionStatus } = useSessionStore()
+  const { sessionConfig, setSessionStatus } = useSessionStore()
 
-  useSocket()           // listens for interviewer:question, coach:hint, session:ended etc.
-  useDeepgram()         // mic → Deepgram → transcript → answer:complete
-  useLocalAnalytics()   // fast browser-side coaching (WPM, fillers, length)
+  useSocket()
+  useDeepgram()
+  useLocalAnalytics()
 
   useEffect(() => {
     if (!sessionConfig) {
@@ -31,13 +32,13 @@ export default function InterviewRoom() {
     socket.emit('session:start', { sessionConfig })
     setSessionStatus('active')
 
-    return () => {
-      socket.disconnect()
-    }
+    // Do NOT disconnect here — keep socket alive so report:ready can arrive
+    // after we navigate to /report. Socket is disconnected in Report.jsx once
+    // the report is received.
   }, [])
 
   function handleEndSession() {
-    const { sessionId } = useSessionStore.getState()   // .getState() is safe outside hooks
+    const { sessionId } = useSessionStore.getState()
     socket.emit('session:end', { sessionId })
     setSessionStatus('ended')
     navigate('/report')
@@ -45,6 +46,7 @@ export default function InterviewRoom() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
+      <StatusBar />
       <div className="flex items-center justify-between px-6 py-3 border-b border-gray-800">
         <span className="font-semibold text-white">WellSaid</span>
         <button onClick={handleEndSession} className="text-sm text-red-400 hover:text-red-300">
