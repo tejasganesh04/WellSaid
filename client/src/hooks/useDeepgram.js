@@ -156,6 +156,11 @@ export function useDeepgram() {
       connection.on(LiveTranscriptionEvents.Error, (err) => {
         console.error('[deepgram] error — switching to fallback:', err)
         isActiveRef.current = false
+        // Release mic stream so Web Speech can access it cleanly
+        recorderRef.current?.stop()
+        streamRef.current?.getTracks().forEach((t) => t.stop())
+        recorderRef.current = null
+        streamRef.current = null
         connectionRef.current = null
         startWebSpeech()
       })
@@ -166,6 +171,11 @@ export function useDeepgram() {
         if (isActiveRef.current && useSessionStore.getState().sessionStatus === 'active') {
           console.warn('[deepgram] unexpected close — switching to fallback')
           isActiveRef.current = false
+          // Release mic stream so Web Speech can access it cleanly
+          recorderRef.current?.stop()
+          streamRef.current?.getTracks().forEach((t) => t.stop())
+          recorderRef.current = null
+          streamRef.current = null
           startWebSpeech()
         }
       })
