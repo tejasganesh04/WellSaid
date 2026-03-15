@@ -76,7 +76,16 @@ export function useDeepgram() {
     }
     recognition.onspeechstart = () => clearTimeout(speechEndTimer)
 
-    recognition.onerror = (e) => console.error('[webspeech] error:', e.error)
+    recognition.onerror = (e) => {
+      console.error('[webspeech] error:', e.error)
+      if (e.error === 'no-speech' || e.error === 'audio-capture') {
+        // Restart recognition — these errors don't stop continuous mode in all browsers
+        try { recognition.stop() } catch (_) {}
+        setTimeout(() => {
+          try { recognition.start() } catch (_) {}
+        }, 300)
+      }
+    }
     recognition.start()
   }, [appendTranscript, clearTranscript, coachEnabled, setSttMode, addDegradedService])
 
@@ -151,7 +160,8 @@ export function useDeepgram() {
         startWebSpeech()
       })
 
-      connection.on(LiveTranscriptionEvents.Close, () => {
+      connection.on(LiveTranscriptionEvents.Close, (event) => {
+        console.warn('[deepgram] close event — code:', event?.code, 'reason:', event?.reason)
         // Only fall back if we're still supposed to be active (unexpected close)
         if (isActiveRef.current && useSessionStore.getState().sessionStatus === 'active') {
           console.warn('[deepgram] unexpected close — switching to fallback')

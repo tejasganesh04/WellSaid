@@ -3,7 +3,7 @@ import { FaceDetector, FilesetResolver } from '@mediapipe/tasks-vision'
 import useSessionStore from '../store/sessionStore'
 
 const ANALYSIS_INTERVAL_MS = 800   // run face detection every 800ms
-const COACH_COOLDOWN_MS = 10000    // don't repeat same visual hint within 10s
+const COACH_COOLDOWN_MS = 15000    // don't repeat same visual hint within 15s
 
 export function useMediaPipe(videoRef) {
   const detectorRef = useRef(null)
@@ -81,7 +81,7 @@ export function useMediaPipe(videoRef) {
     } catch (err) {
       // Detection errors are silent — visual coaching just pauses
     }
-  }, [coachEnabled, setFaceVisible, addCoachCard])
+  }, [coachEnabled, setFaceVisible])  // addCoachCard is stable — intentionally omitted
 
   // Initialize when session becomes active
   useEffect(() => {
